@@ -1,4 +1,4 @@
-# NEO Lab — Enterprise Network Simulation
+<img width="976" height="727" alt="image" src="https://github.com/user-attachments/assets/24d5a98b-d1c1-4b28-b513-ed94cd24a3da" /># NEO Lab — Enterprise Network Simulation
 
 ## Overview
 A comprehensive enterprise network simulation built in Cisco Packet Tracer,
@@ -6,6 +6,8 @@ covering multi-site LAN/WAN design, dynamic routing, and network security.
 
 ## Topology
 - **LAN NEO NETWORK** — Multi-VLAN switching with redundancy
+  <img width="976" height="727" alt="image" src="https://github.com/user-attachments/assets/070cb6f5-2d7d-475d-a4ee-a6a0776ce9b5" />
+
 - **WAN NEO ISP** — 4-router ISP backbone
 - **LAN GOOGLE** — DMZ with web server and NAT
 
