@@ -1,0 +1,55 @@
+! =====================================================
+! R6 — WAN NEO ISP
+! Role: EIGRP 1000 backbone router — preferred transit path
+!       Connects R4 <-> R7 (primary route to reach Google subnet,
+!       selected via delay-based metric tuning on R4)
+! =====================================================
+
+version 15.1
+no service timestamps log datetime msec
+no service timestamps debug datetime msec
+no service password-encryption
+!
+hostname R6
+!
+ip cef
+no ipv6 cef
+!
+spanning-tree mode pvst
+!
+interface GigabitEthernet0/0
+ ip address 172.16.67.1 255.255.255.252
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/1
+ no ip address
+ duplex auto
+ speed auto
+ shutdown
+!
+interface GigabitEthernet0/2
+ ip address 172.16.46.2 255.255.255.252
+ duplex auto
+ speed auto
+!
+interface Vlan1
+ no ip address
+ shutdown
+!
+router eigrp 1000
+ network 172.16.46.0 0.0.0.3
+ network 172.16.67.0 0.0.0.3
+!
+ip classless
+!
+ip flow-export version 9
+!
+line con 0
+!
+line aux 0
+!
+line vty 0 4
+ login
+!
+end
