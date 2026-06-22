@@ -20,7 +20,7 @@ The goal was to go beyond a basic CCNA-style topology and build something closer
 
 **LAN NEO NETWORK** — Redundant Layer 2/3 design across OSPF Area 0 and Area 1.
 
-![LAN NEO NETWORK topology](screenshots/lan-neo-network.png)
+![LAN NEO NETWORK topology](screenshots/web-server-verification.png)
 
 **WAN NEO ISP** — 4-router EIGRP backbone connecting NEO NETWORK to the Google DMZ.
 
