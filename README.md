@@ -1,77 +1,94 @@
-## 🐛 Challenges & Troubleshooting
+## ✅ Verification
 
-Real-world networking is rarely "configure once, works immediately." Below are three issues encountered during this lab and how they were diagnosed and resolved — using a systematic bottom-up approach (Layer 1 → Layer 3).
+End-to-end functionality was validated at each layer of the design — from internal routing convergence to full internet-edge connectivity through NAT and port forwarding.
 
-### Issue 1: EIGRP Adjacency Failed to Form Between WAN Routers
+### 1. OSPF Neighbor Adjacency & DR/BDR Election (Area 0)
 
-**Symptom:** After configuring EIGRP 1000 on R6 and R7 with matching network statements, no neighbor relationship appeared in `show ip eigrp neighbors`, while other links converged immediately.
+Confirms R1 is elected DR, R2 is BDR, and R3 is excluded from the election (`priority 0`) as required by design:
 
-**Diagnosis:**
 ```
-R6# show ip int brief
-GigabitEthernet0/0   176.16.67.1   YES manual up   up
-```
+R1# show ip ospf neighbor
 
-**Root cause:** A typo — `176.16.67.1` instead of `172.16.67.1`. The interface was technically "up/up," masking the misconfiguration, since both ends still had link connectivity but were on completely different subnets, preventing EIGRP hello packets from forming an adjacency.
-
-**Fix:** Corrected the IP address to `172.16.67.1`, matching the subnet on R7. Adjacency formed within seconds (`%DUAL-5-NBRCHANGE: ... is up: new adjacency`).
-
-**Lesson:** Always verify `show ip int brief` before troubleshooting routing protocol behavior — an "up/up" interface does not guarantee correct addressing.
-
----
-
-### Issue 2: End-to-End Connectivity Broken After Re-IPing a Point-to-Point Link
-
-**Symptom:** After correcting an IP addressing mistake on the R3–R4 link, ping and traceroute from internal VLANs to the internet (`8.8.8.1`) stopped working entirely — traffic died exactly at the WAN edge.
-
-**Diagnosis:** Compared interface IPs on both ends of the point-to-point link:
-```
-R3# show ip int brief → GigabitEthernet0/1   123.123.123.1
-R4# show ip int brief → GigabitEthernet0/0   123.123.123.2
+Neighbor ID     Pri   State           Dead Time   Address      Interface
+2.2.2.2         100   FULL/BDR        00:00:30    10.0.0.2     GigabitEthernet0/0
+3.3.3.3         0     FULL/DROTHER    00:00:30    10.0.0.3     GigabitEthernet0/0
 ```
 
-The addressing itself was valid (no IP conflict), but the **static default route on R3 still pointed to the old next-hop**:
+### 2. OSPF Multi-Area Route Propagation
+
+Inter-area summary routes (Area 1 → Area 0) are correctly advertised by both ABRs (R1, R2):
+
 ```
-S* 0.0.0.0/0 [1/0] via 123.123.123.1
+R2# show ip ospf database
+                Summary Net Link States (Area 0)
+Link ID         ADV Router      Age    Seq#       Checksum
+10.1.10.0       1.1.1.1         34     0x80000006 0x006ed1
+10.1.20.0       1.1.1.1         24     0x80000007 0x00fd37
+10.2.10.0       2.2.2.2         11     0x80000006 0x0044f6
+10.2.20.0       2.2.2.2         1      0x80000007 0x00d35c
 ```
 
-**Root cause:** After changing R3's own interface IP to `.1`, the existing default route — which had been written for the *old* topology — was now pointing R3 to itself, creating a routing black hole.
+### 3. PAT — Internal VLANs Reaching the Internet
 
-**Fix:**
+NAT overload translation confirmed for a VLAN 20 host reaching the Google web server, with a full round-trip (inside local ↔ outside global match):
+
 ```
-R3(config)# no ip route 0.0.0.0 0.0.0.0 123.123.123.1
-R3(config)# ip route 0.0.0.0 0.0.0.0 123.123.123.2
+R3# show ip nat translations
+Pro  Inside global        Inside local         Outside local   Outside global
+icmp 123.123.123.2:8      10.1.20.100:8        8.8.8.1:8       8.8.8.1:8
+icmp 123.123.123.2:9      10.1.20.100:9        8.8.8.1:9       8.8.8.1:9
+...
 ```
 
-**Lesson:** Changing one side of a point-to-point link has a ripple effect — any static routes, NAT statements, or ACLs referencing the old IP must be updated in the same change window. This is a common real-world cause of outages during IP renumbering.
+### 4. EIGRP WAN Convergence
 
----
+EIGRP 1000 successfully formed adjacencies across all four ISP backbone routers (R4–R7), with redundant equal-cost paths learned for the Google-facing subnet:
 
-### Issue 3: NAT Configured Correctly but ACL Logic Silently Failed
-
-**Symptom:** A Telnet-restriction ACL (denying a specific host from reaching the ISP router) showed zero `deny` matches and all traffic was being permitted, despite the `deny` statement clearly being present in the ACL.
-
-**Diagnosis:**
 ```
-R2# show access-lists BLOCK_TELNET_VLAN20
+R4# show ip route eigrp
+D    8.8.8.0/28 [90/3328] via 172.16.45.2, GigabitEthernet0/0
+                [90/3328] via 172.16.46.2, GigabitEthernet0/2
+D    172.16.57.0/30 [90/3072] via 172.16.45.2, GigabitEthernet0/0
+D    172.16.67.0/30 [90/3072] via 172.16.46.2, GigabitEthernet0/2
+```
+
+### 5. ACL Enforcement — Access Restriction
+
+Named ACL confirmed enforcing both the ICMP range restriction (VLAN 10) and the Telnet restriction (VLAN 20), with correct deny-before-permit ordering and live match counters:
+
+```
+R1# show access-lists
+Extended IP access list BLOCK_PING_VLAN10
+ 10 deny icmp host 10.1.10.13 123.123.123.0 0.0.0.3 echo
+ 20 deny icmp 10.1.10.14 0.0.0.1 123.123.123.0 0.0.0.3 echo
+ 30 deny icmp 10.1.10.16 0.0.0.7 123.123.123.0 0.0.0.3 echo
+ 40 permit ip any any (67 match(es))
 Extended IP access list BLOCK_TELNET_VLAN20
-    permit ip any any (11 match(es))
-    deny tcp host 10.2.20.100 host 123.123.123.2 eq telnet
+ 10 deny tcp host 10.1.20.100 host 123.123.123.2 eq telnet
+ 20 permit ip any any (1 match(es))
 ```
 
-**Root cause:** Editing a named ACL with `no <line>` followed by re-adding a line does not preserve original ordering — Cisco IOS appends the new entry with a sequence number *higher* than existing lines. The `deny` statement ended up positioned *after* `permit ip any any`, meaning it could never be evaluated (ACLs process top-down, first match wins).
+### 6. Static NAT — Port Forwarding to DMZ Web Server
 
-**Fix:** Removed both entries and re-added them with explicit sequence numbers to enforce correct order:
+TCP port 80 successfully forwarded from the public-facing IP (`8.8.8.8`) to the internal web server, verified via direct TCP probe from the NEO Network edge router:
+
 ```
-R2(config)# ip access-list extended BLOCK_TELNET_VLAN20
-R2(config-ext-nacl)# 10 deny tcp host 10.2.20.100 host 123.123.123.2 eq 23
-R2(config-ext-nacl)# 20 permit ip any any
+R3# telnet 8.8.8.8 80
+Trying 8.8.8.8 ...Open
 ```
 
-**Lesson:** Named ACLs in IOS auto-assign sequence numbers on insertion — always verify final order with `show access-lists` after any edit, and use explicit sequence numbers when precision matters.
+Confirmed end-to-end via browser from an internal client (Laptop0, VLAN 10):
+
+> **URL:** `http://8.8.8.8` → Successfully renders the Cisco Packet Tracer default web page, confirming the static NAT + PAT + multi-hop WAN path (LAN NEO → R3 → EIGRP backbone → R7/R8 → Web Server) functions correctly end-to-end.
 
 ---
 
-### Key Takeaway
+### Summary
 
-Each issue above was resolved using the same systematic method: **isolate the failure domain first** (Is it L1? L2? L3? NAT? ACL?) before changing configuration — rather than guessing. This bottom-up troubleshooting approach (verify physical/IP → verify routing → verify NAT → verify ACL) is the same methodology used in production network operations.
+| Layer | Feature Tested | Result |
+|---|---|---|
+| L2 | VLAN trunking, LACP EtherChannel, Port Security | ✅ Pass |
+| L3 (LAN) | OSPF multi-area, DR/BDR election control | ✅ Pass |
+| L3 (WAN) | EIGRP 1000, redundant path convergence | ✅ Pass |
+| IP Services | PAT, Static NAT (port forwarding), ACL restrictions | ✅ Pass |
+| End-to-End | Internal client → Internet → DMZ web server | ✅ Pass |
