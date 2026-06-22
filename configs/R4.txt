@@ -1,0 +1,67 @@
+! =====================================================
+! R3 — LAN NEO NETWORK / WAN Edge
+! Role: OSPF Area 0 internal router (DR/BDR election excluded, priority 0)
+!       Advertises default route into OSPF (default-information originate)
+!       Performs PAT (NAT overload) — restricts internet access to VLAN 10/20 only
+! =====================================================
+
+version 15.1
+no service timestamps log datetime msec
+no service timestamps debug datetime msec
+no service password-encryption
+!
+hostname R3
+!
+ip cef
+no ipv6 cef
+!
+spanning-tree mode pvst
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.3 255.255.255.0
+ ip ospf priority 0
+ ip nat inside
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/1
+ ip address 123.123.123.1 255.255.255.252
+ ip nat outside
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/2
+ no ip address
+ duplex auto
+ speed auto
+ shutdown
+!
+interface Vlan1
+ no ip address
+ shutdown
+!
+router ospf 1
+ router-id 3.3.3.3
+ log-adjacency-changes
+ network 10.0.0.0 0.0.0.255 area 0
+ default-information originate
+!
+ip nat inside source list 1 interface GigabitEthernet0/1 overload
+ip classless
+ip route 0.0.0.0 0.0.0.0 123.123.123.2
+!
+ip flow-export version 9
+!
+access-list 1 permit 10.1.10.0 0.0.0.255
+access-list 1 permit 10.1.20.0 0.0.0.255
+access-list 1 permit 10.2.10.0 0.0.0.255
+access-list 1 permit 10.2.20.0 0.0.0.255
+!
+line con 0
+!
+line aux 0
+!
+line vty 0 4
+ login
+!
+end
